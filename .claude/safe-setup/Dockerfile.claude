@@ -1,0 +1,96 @@
+FROM python:3.12-slim-bookworm
+
+# Install system packages: base tools, node, chrome dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    curl \
+    git \
+    build-essential \
+    postgresql-client \
+    vim \
+    sudo \
+    nodejs \
+    npm \
+    ca-certificates \
+    gnupg \
+    # Chrome/Chromium dependencies for botasaurus and playwright
+    chromium \
+    chromium-driver \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Docker Engine (DinD) and Compose plugin from official Docker repository
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
+       > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       docker-ce docker-ce-cli containerd.io docker-compose-plugin \
+       iptables \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Chrome path for botasaurus
+ENV CHROME_PATH=/usr/bin/chromium
+
+# Create non-root user with sudo access and docker group
+RUN groupadd -r osint && useradd -r -g osint -m osint \
+    && echo "osint ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
+    && groupadd -f docker && usermod -aG docker osint
+
+# Install Python packages
+RUN pip install --no-cache-dir \
+    click \
+    omegaconf \
+    botasaurus \
+    playwright \
+    pandas \
+    telethon \
+    requests \
+    beautifulsoup4
+
+# Install Playwright browsers (as root, then fix permissions)
+RUN playwright install chromium && playwright install-deps chromium
+
+# Install Claude Code CLI globally
+RUN npm install -g @anthropic-ai/claude-code
+
+# Set up working directory
+WORKDIR /workspace
+
+# Copy and set up entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create directories for persistence
+RUN mkdir -p /home/osint/.claude && chown -R osint:osint /home/osint/.claude
+RUN mkdir -p /home/osint/.bash_history_dir && chown -R osint:osint /home/osint/.bash_history_dir
+
+# Switch to non-root user
+USER osint
+
+# Install rtk (Rust Token Killer) - compile from source for GLIBC compatibility
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && . "$HOME/.cargo/env" \
+    && cargo install --git https://github.com/rtk-ai/rtk \
+    && mkdir -p "$HOME/.local/bin" \
+    && cp "$HOME/.cargo/bin/rtk" "$HOME/.local/bin/rtk" \
+    && rustup self uninstall -y
+ENV PATH="/home/osint/.local/bin:${PATH}"
+
+# Use entrypoint to configure git and run command
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["bash"]

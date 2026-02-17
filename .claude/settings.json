@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(python:*)",
+      "Bash(pip:*)",
+      "Bash(jupyter:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(echo:*)",
+      "Bash(printf:*)",
+      "Bash(wc:*)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Bash(timeout:*)",
+      "Bash(bash:*)",
+      "Bash(curl:*)",
+      "WebSearch",
+      "WebFetch(domain:*)",
+      "SlashCommand(*)",
+      "Skill(*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}
