@@ -1,6 +1,13 @@
+# Stage 1: Compile rtk from source
+FROM rust:1-slim-bookworm AS rtk-builder
+RUN apt-get update && apt-get install -y --no-install-recommends git pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN cargo install --git https://github.com/rtk-ai/rtk
+
+# Stage 2: Final image
 FROM python:3.12-slim-bookworm
 
-# Install system packages: base tools, node, chrome dependencies
+# Install system packages, Chrome dependencies, Docker Engine, and Node in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
@@ -29,10 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Docker Engine (DinD) and Compose plugin from official Docker repository
-RUN install -m 0755 -d /etc/apt/keyrings \
+    && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
@@ -51,7 +55,7 @@ RUN groupadd -r osint && useradd -r -g osint -m osint \
     && echo "osint ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
     && groupadd -f docker && usermod -aG docker osint
 
-# Install Python packages
+# Install Python packages, Playwright browsers, then remove build-essential
 RUN pip install --no-cache-dir \
     click \
     omegaconf \
@@ -60,13 +64,18 @@ RUN pip install --no-cache-dir \
     pandas \
     telethon \
     requests \
-    beautifulsoup4
-
-# Install Playwright browsers (as root, then fix permissions)
-RUN playwright install chromium && playwright install-deps chromium
+    beautifulsoup4 \
+    fastapi[standard] \
+    curl-cffi \
+    && playwright install chromium && playwright install-deps chromium \
+    && apt-get purge -y --auto-remove build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
+
+# Copy rtk binary from builder stage
+COPY --from=rtk-builder /usr/local/cargo/bin/rtk /usr/local/bin/rtk
 
 # Set up working directory
 WORKDIR /workspace
@@ -76,20 +85,11 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Create directories for persistence
-RUN mkdir -p /home/osint/.claude && chown -R osint:osint /home/osint/.claude
-RUN mkdir -p /home/osint/.bash_history_dir && chown -R osint:osint /home/osint/.bash_history_dir
+RUN mkdir -p /home/osint/.claude /home/osint/.bash_history_dir \
+    && chown -R osint:osint /home/osint/.claude /home/osint/.bash_history_dir
 
 # Switch to non-root user
 USER osint
-
-# Install rtk (Rust Token Killer) - compile from source for GLIBC compatibility
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    && . "$HOME/.cargo/env" \
-    && cargo install --git https://github.com/rtk-ai/rtk \
-    && mkdir -p "$HOME/.local/bin" \
-    && cp "$HOME/.cargo/bin/rtk" "$HOME/.local/bin/rtk" \
-    && rustup self uninstall -y
-ENV PATH="/home/osint/.local/bin:${PATH}"
 
 # Use entrypoint to configure git and run command
 ENTRYPOINT ["/entrypoint.sh"]

@@ -2,6 +2,10 @@
 
 A sandboxed Docker environment for Python development with Claude Code assistance.
 
+This repo is designed as a **template**: clone it for each new project.
+Each clone gets its own Docker volumes (Claude history, Docker images, etc.)
+thanks to automatic prefixing by Docker Compose (based on the parent directory name).
+
 Heavily inspired by Bernard Lambeau https://github.com/blambeau, and in particular this tutorial:
 
 https://www.loom.com/share/ef65c6ebfc35491783ff0a6067447dd4
