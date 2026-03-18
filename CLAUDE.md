@@ -31,9 +31,10 @@ Always use :
 - Telethon if you need to interact with Telegram
 - Botasaurus to build a robust scraper.
 
-Always lint the code with black/pep8
+Always lint the code with black/pep8 or ruff (better)
 
 Use as much as possible classes and functions.
+Reuse functions and classes.
 
 ## Task Management
 

@@ -67,6 +67,7 @@ RUN pip install --no-cache-dir \
     beautifulsoup4 \
     fastapi[standard] \
     curl-cffi \
+    ruff \
     && playwright install chromium && playwright install-deps chromium \
     && apt-get purge -y --auto-remove build-essential \
     && rm -rf /var/lib/apt/lists/*
