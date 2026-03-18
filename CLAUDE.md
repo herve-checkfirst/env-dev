@@ -43,6 +43,8 @@ Tasks can be organized in `.claude/tasks/`:
 - `analyzed/` - Tasks needing clarification
 - `hold-on/` - Paused tasks
 - `abandoned/` - Dropped tasks
+  
+Processing a task implies to move the task to the right column automatically.
 
 **IMPORTANT**: One commit per task. Use `git commit --amend` if needed.
 
