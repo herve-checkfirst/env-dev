@@ -27,14 +27,23 @@ build/
 *.log
 
 # Claude
+# The .claude/ directory is deliberately versioned: agents, Docker setup,
+# permissions and tasks must be readable in commits and on GitHub.
+# Only per-machine secrets and runtime state are excluded below.
 .claude/settings.local.json
 .claude/credentials.json
 .claude/.credentials
+.claude/.credentials.json
 .claude/statsig/
 .claude/todos/
 .claude/projects/
+.claude/shell-snapshots/
+.claude/history.jsonl
+.claude/codebase-memory/
+.claude/.claude.json
+.claude/mcp.json
+.claude/ide/
+.claude/plugins/
+.claude/*.local.json
 .bash_history
 .bash_history_dir/
-
-# Safe setup secrets
-.claude/safe-setup/.env

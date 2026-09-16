@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "codebase-memory-mcp": {
+      "command": "/usr/local/bin/codebase-memory-mcp",
+      "args": [],
+      "env": {
+        "CBM_CACHE_DIR": "/home/osint/.claude/codebase-memory"
+      }
+    }
+  }
+}

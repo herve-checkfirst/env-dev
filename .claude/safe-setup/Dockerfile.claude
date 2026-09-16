@@ -1,10 +1,3 @@
-# Stage 1: Compile rtk from source
-FROM rust:1-slim-bookworm AS rtk-builder
-RUN apt-get update && apt-get install -y --no-install-recommends git pkg-config libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-RUN cargo install --git https://github.com/rtk-ai/rtk
-
-# Stage 2: Final image
 FROM python:3.12-slim-bookworm
 
 # Install system packages, Chrome dependencies, Docker Engine, and Node in a single layer
@@ -50,6 +43,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set Chrome path for botasaurus
 ENV CHROME_PATH=/usr/bin/chromium
 
+# codebase-memory-mcp keeps its code graph here. Set as ENV, not just exported
+# by the entrypoint: `docker compose exec` bypasses the entrypoint, so an export
+# there would be missing from the shell `make shell` actually drops you into.
+ENV CBM_CACHE_DIR=/home/osint/.claude/codebase-memory
+
 # Create non-root user with sudo access and docker group
 RUN groupadd -r osint && useradd -r -g osint -m osint \
     && echo "osint ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
@@ -75,8 +73,62 @@ RUN pip install --no-cache-dir \
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Copy rtk binary from builder stage
-COPY --from=rtk-builder /usr/local/cargo/bin/rtk /usr/local/bin/rtk
+# Install rtk (Rust Token Killer) and codebase-memory-mcp from prebuilt binaries,
+# so the image needs neither a Rust nor a C toolchain.
+#   rtk compresses CLI output before it reaches Claude's context window.
+#   codebase-memory-mcp indexes the repo into a persistent code knowledge graph
+#   and serves it over MCP.
+#
+# Binary selection is constrained by this image's glibc (bookworm ships 2.36):
+#   - rtk amd64 uses the musl target, which is fully static. Upstream publishes
+#     no musl build for arm64, only a gnu one that needs glibc 2.39, so rtk is
+#     installed on amd64 only and the entrypoint degrades gracefully without it.
+#   - codebase-memory-mcp must use the "-portable" variant: the plain linux
+#     binary dynamically links glibc 2.38+ and would fail to run here. Upstream's
+#     own install.sh always picks -portable on Linux for this reason.
+#
+# Versions are pinned so a rebuild yields the same image, and each archive is
+# checked against the digest published in the release's checksums.txt.
+# TARGETARCH is set by BuildKit (amd64/arm64).
+ARG TARGETARCH
+ARG RTK_VERSION=0.49.0
+ARG CBM_VERSION=0.11.0
+RUN set -eux; \
+    if [ -z "${TARGETARCH:-}" ]; then \
+      echo "TARGETARCH is not set: build with BuildKit (DOCKER_BUILDKIT=1)" >&2; \
+      exit 1; \
+    fi; \
+    case "$TARGETARCH" in \
+      amd64) RTK_TARGET=x86_64-unknown-linux-musl; CBM_TARGET=linux-amd64-portable ;; \
+      arm64) RTK_TARGET=; CBM_TARGET=linux-arm64-portable ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /tmp/dl; \
+    fetch() { \
+      curl -fsSL --retry 3 -o /tmp/dl/archive.tar.gz "$1"; \
+      curl -fsSL --retry 3 -o /tmp/dl/checksums.txt "$2"; \
+      expected="$(awk -v f="$3" '$2 == f || $2 == "*" f { print $1 }' /tmp/dl/checksums.txt)"; \
+      if [ -z "$expected" ]; then echo "no checksum published for $3" >&2; exit 1; fi; \
+      echo "$expected  /tmp/dl/archive.tar.gz" | sha256sum -c -; \
+      tar -xzf /tmp/dl/archive.tar.gz --no-same-owner --no-same-permissions -C /tmp/dl; \
+      rm -f /tmp/dl/archive.tar.gz /tmp/dl/checksums.txt; \
+    }; \
+    CBM_BASE="https://github.com/DeusData/codebase-memory-mcp/releases/download/v${CBM_VERSION}"; \
+    CBM_FILE="codebase-memory-mcp-${CBM_TARGET}.tar.gz"; \
+    fetch "${CBM_BASE}/${CBM_FILE}" "${CBM_BASE}/checksums.txt" "$CBM_FILE"; \
+    install -m 0755 /tmp/dl/codebase-memory-mcp /usr/local/bin/codebase-memory-mcp; \
+    rm -rf /tmp/dl/*; \
+    codebase-memory-mcp --version; \
+    if [ -n "$RTK_TARGET" ]; then \
+      RTK_BASE="https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}"; \
+      RTK_FILE="rtk-${RTK_TARGET}.tar.gz"; \
+      fetch "${RTK_BASE}/${RTK_FILE}" "${RTK_BASE}/checksums.txt" "$RTK_FILE"; \
+      install -m 0755 /tmp/dl/rtk /usr/local/bin/rtk; \
+      rtk --version; \
+    else \
+      echo "NOTE: rtk publishes no static linux/${TARGETARCH} build; skipping."; \
+    fi; \
+    rm -rf /tmp/dl
 
 # Set up working directory
 WORKDIR /workspace
